@@ -13,7 +13,6 @@ typedef struct list_cv{
     void *to_deq;//the item that the thread would dequeue; 
 }list_cv;
 
-mtx_t mtx;
 cnd_t waiting_list;
 size_t size_counter;
 size_t waiting_counter;
@@ -22,37 +21,42 @@ list_item *available_items;//pointer for the struct list_item that holds first i
 list_cv *waiting_threads;//pointer for the struct list_cv that holds the cv in which the first thread is waiting for an item that will be assigned to it to dequeue;
 mtx_t lock;
 
-
 void insert_to_available_items(void *item){
     list_item *curr;
     if (available_items == NULL){
         available_items = (list_item*) malloc(sizeof(list_item));
         available_items->item = item;
+        available_items->next = NULL;
     }
     else{   
         curr = available_items;
         while (curr->next != NULL){
             curr = curr->next;
         }
-        curr->next = malloc(sizeof(list_item));
+        curr->next = (list_item*) malloc(sizeof(list_item));
         (curr->next)->item = item;
+        (curr->next)->next = NULL;
     }
 }
 
-void insert_to_waiting_threads(cnd_t *cv){
+list_cv* insert_to_waiting_threads(cnd_t *cv){
     list_cv *curr;
-    if (waiting_threads == NULL){
+    curr = waiting_threads;
+    if (curr == NULL){
         waiting_threads = (list_cv*) malloc(sizeof(list_cv));
         waiting_threads->cv = cv;
+        waiting_threads->to_deq = NULL;
+        waiting_threads->next = NULL;
+        return waiting_threads;
     }
-    else{
-        curr = waiting_threads;
-        while (curr->next != NULL){
-            curr = curr->next;
-        }
-        curr->next = malloc(sizeof(list_item));
-        (curr->next)->cv = cv;
+    while (curr->next != NULL){
+        curr = curr->next;
     }
+    curr->next = (list_cv*) malloc(sizeof(list_cv));
+    (curr->next)->cv = cv;
+    (curr->next)->next = NULL;
+    (curr->next)->to_deq = NULL;
+    return curr->next;
 }
 
 void* extract_first_available_item_and_free_node(void){
@@ -66,40 +70,39 @@ void* extract_first_available_item_and_free_node(void){
 }
 
 void free_available_list(list_item *head){
-    list_item *curr;
-    curr = head;
-    while (curr != NULL){
-        free_available_list(curr->next);
-        free(curr);
+    if (head != NULL){
+        free_available_list(head->next);
+        free(head);
     }
 }
 
 void free_waiting_list(list_cv *head){
-    list_cv *curr;
-    curr = head;
-    while (curr != NULL){
-        free_waiting_list(curr->next);
-        free(curr);
+    if (head != NULL){
+        free_waiting_list(head->next);
+        free(head);
     }
 }
 
 void initQueue(void){
-    available_items = NULL;
-    waiting_threads = NULL;
     mtx_init(&lock, mtx_plain);
+    mtx_lock(&lock);
     waiting_counter = 0;
     visited_counter = 0;
     size_counter = 0;
+    available_items = NULL;
+    waiting_threads = NULL;
+    mtx_unlock(&lock);
 }
+
 void destroyQueue(void){
     mtx_lock(&lock);
     free_available_list(available_items);
     free_waiting_list(waiting_threads);
-    mtx_unlock(&lock);
     mtx_destroy(&lock);
 }
 
 void enqueue(void* item){
+    list_cv *tmp;
     mtx_lock(&lock);
     ++size_counter;
     if (waiting_threads == NULL){
@@ -107,7 +110,9 @@ void enqueue(void* item){
     }
     else{
         waiting_threads->to_deq = item;
-        cnd_signal(waiting_threads->cv);
+        tmp = waiting_threads;
+        waiting_threads = waiting_threads->next;
+        cnd_signal(tmp->cv);
     }
     mtx_unlock(&lock);
 }
@@ -115,7 +120,7 @@ void enqueue(void* item){
 void* dequeue(void){
     void *res;
     cnd_t cv;
-    list_cv *tmp_list_cv;
+    list_cv *active_node;
     mtx_lock(&lock);
     cnd_init(&cv);
     if (available_items != NULL){
@@ -125,19 +130,19 @@ void* dequeue(void){
     }
     else{
         ++waiting_counter;
-        insert_to_waiting_threads(&cv);
+        active_node = insert_to_waiting_threads(&cv);
         cnd_wait(&cv, &lock);
         waiting_counter = waiting_counter-1;
-        size_counter = size_counter-1;// it's duplicated action in both two conditions because I wanted to update the counters as close as possible to the removing action
-        ++visited_counter;
-        tmp_list_cv = waiting_threads;
-        waiting_threads = waiting_threads->next;
-        res = tmp_list_cv->to_deq;
-        free(tmp_list_cv);
-        
+        res = active_node->to_deq;
+        if (res != NULL){
+            size_counter = size_counter-1;
+            ++visited_counter;
+        }
+        free(active_node);
     }
-    mtx_unlock(&lock);
     cnd_destroy(&cv);
+    mtx_unlock(&lock);
+    
     return res;
 }
 
@@ -165,3 +170,32 @@ size_t waiting(void){
 size_t visited(void){
     return visited_counter;
 }
+
+
+        //if (active_node->prev != NULL){
+          //  (active_node->prev)->next = active_node->next;
+            //if (active_node->next!=NULL){
+              //  (active_node->next)->prev = active_node->prev;
+            //}
+        //}
+        //else{
+          //  if (active_node->next != NULL){
+           // waiting_threads = active_node->next;
+           // waiting_threads->prev = NULL;
+           // }
+           // else{
+             //   waiting_threads = NULL;
+           // }
+       // }
+
+               //curr = waiting_threads;
+        //while(curr != NULL){
+            //if (curr->to_deq == NULL){
+                //curr->to_deq = item;
+                //cnd_signal(curr->cv);
+                //mtx_unlock(&lock);
+                //return;
+            //}
+            //curr = curr->next;
+        //}
+        //insert_to_available_items(item);
