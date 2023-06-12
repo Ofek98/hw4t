@@ -170,32 +170,3 @@ size_t waiting(void){
 size_t visited(void){
     return visited_counter;
 }
-
-
-        //if (active_node->prev != NULL){
-          //  (active_node->prev)->next = active_node->next;
-            //if (active_node->next!=NULL){
-              //  (active_node->next)->prev = active_node->prev;
-            //}
-        //}
-        //else{
-          //  if (active_node->next != NULL){
-           // waiting_threads = active_node->next;
-           // waiting_threads->prev = NULL;
-           // }
-           // else{
-             //   waiting_threads = NULL;
-           // }
-       // }
-
-               //curr = waiting_threads;
-        //while(curr != NULL){
-            //if (curr->to_deq == NULL){
-                //curr->to_deq = item;
-                //cnd_signal(curr->cv);
-                //mtx_unlock(&lock);
-                //return;
-            //}
-            //curr = curr->next;
-        //}
-        //insert_to_available_items(item);
