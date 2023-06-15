@@ -1,5 +1,6 @@
 #include <threads.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include "queue.h"
 
 typedef struct list_item{
@@ -14,9 +15,9 @@ typedef struct list_cv{
 }list_cv;
 
 cnd_t waiting_list;
-size_t size_counter;
-size_t waiting_counter;
-size_t visited_counter;
+atomic_size_t size_counter;
+atomic_size_t waiting_counter;
+atomic_size_t visited_counter;
 list_item *available_items;//pointer for the struct list_item that holds first item waiting in the queue without any thread assigned to it; 
 list_cv *waiting_threads;//pointer for the struct list_cv that holds the cv in which the first thread is waiting for an item that will be assigned to it to dequeue;
 mtx_t lock;
@@ -109,9 +110,9 @@ void enqueue(void* item){
          insert_to_available_items(item);
     }
     else{
-        waiting_threads->to_deq = item;
+        waiting_threads->to_deq = item;//assigning the item to the fist waiting thread
         tmp = waiting_threads;
-        waiting_threads = waiting_threads->next;
+        waiting_threads = waiting_threads->next;//promote second waiting thread to first
         cnd_signal(tmp->cv);
     }
     mtx_unlock(&lock);
@@ -124,13 +125,13 @@ void* dequeue(void){
     mtx_lock(&lock);
     cnd_init(&cv);
     if (available_items != NULL){
-        res = extract_first_available_item_and_free_node();
+        res = extract_first_available_item_and_free_node();//extract the first available item and promote the second one to the head of the list
         size_counter = size_counter-1;
         ++visited_counter;
     }
     else{
         ++waiting_counter;
-        active_node = insert_to_waiting_threads(&cv);
+        active_node = insert_to_waiting_threads(&cv);//wait at the end of the waiting threads queue
         cnd_wait(&cv, &lock);
         waiting_counter = waiting_counter-1;
         res = active_node->to_deq;
